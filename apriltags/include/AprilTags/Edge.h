@@ -49,6 +49,9 @@ public:
 			const FloatImage& theta, const FloatImage& mag,
 			std::vector<Edge> &edges, size_t &nEdges);
 
+  //! Try running 
+  static int example_cuda_function();
+
   //! Process edges in order of increasing cost, merging clusters if we can do so without exceeding the thetaThresh.
   static void mergeEdges(std::vector<Edge> &edges, UnionFindSimple &uf, float tmin[], float tmax[], float mmin[], float mmax[]);
 

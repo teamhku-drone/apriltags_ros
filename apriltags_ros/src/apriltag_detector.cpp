@@ -1,3 +1,7 @@
+#include <unistd.h>
+#include <stdlib.h>
+#include <time.h>
+
 #include <apriltags_ros/apriltag_detector.h>
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
@@ -13,7 +17,10 @@
 #include <AprilTags/Tag36h11.h>
 #include <XmlRpcException.h>
 
+#include <opencv2/gpu/gpu.hpp>
+
 namespace apriltags_ros{
+
 
 AprilTagDetector::AprilTagDetector(ros::NodeHandle& nh, ros::NodeHandle& pnh): it_(nh){
   XmlRpc::XmlRpcValue april_tag_descriptions;
@@ -43,6 +50,14 @@ AprilTagDetector::~AprilTagDetector(){
   image_sub_.shutdown();
 }
 
+void print_diff(struct timespec start, struct timespec stop, string prefix) {
+  double accum = ( stop.tv_sec - start.tv_sec )
+        + ( stop.tv_nsec - start.tv_nsec )
+          / 1000000L;
+  std::cout <<  prefix + " ";
+  printf( "%lf\n", accum );
+}
+
 void AprilTagDetector::imageCb(const sensor_msgs::ImageConstPtr& msg,const sensor_msgs::CameraInfoConstPtr& cam_info){
   cv_bridge::CvImagePtr cv_ptr;
   try{
@@ -52,10 +67,43 @@ void AprilTagDetector::imageCb(const sensor_msgs::ImageConstPtr& msg,const senso
     ROS_ERROR("cv_bridge exception: %s", e.what());
     return;
   }
-  cv::Mat gray;
-  cv::cvtColor(cv_ptr->image, gray, CV_BGR2GRAY);
-  std::vector<AprilTags::TagDetection>	detections = tag_detector_->extractTags(gray);
+
+  struct timespec start, stop;
+
+  if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+    perror( "clock gettime" );
+    exit( EXIT_FAILURE );
+  }
+
+  cv::gpu::GpuMat input_gray_gpu;
+  cv::gpu::GpuMat output_gray_gpu;
+  cv::Mat output_gray_cpu;
+  //cv::cvtColor(cv_ptr->image, gray, CV_BGR2GRAY);
+  input_gray_gpu.upload(cv_ptr->image);
+  cv::gpu::cvtColor(input_gray_gpu, output_gray_gpu, CV_BGR2GRAY);
+  output_gray_gpu.download(output_gray_cpu);
+
+  if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+    perror( "clock gettime" );
+    exit( EXIT_FAILURE );
+  }
+
+  print_diff(start, stop, "[IMAGE_PROC] BGR2GRAY");
+  // Another timer tick here
+  if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+    perror( "clock gettime" );
+    exit( EXIT_FAILURE );
+  }
+
+  std::vector<AprilTags::TagDetection>	detections = tag_detector_->extractTags(output_gray_cpu);
   ROS_DEBUG("%d tag detected", (int)detections.size());
+
+  if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+    perror( "clock gettime" );
+    exit( EXIT_FAILURE );
+  }
+
+  print_diff(start, stop, "[EXTRACT_TAG] ");
 
   double fx = cam_info->K[0];
   double fy = cam_info->K[4];

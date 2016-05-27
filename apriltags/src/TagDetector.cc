@@ -1,9 +1,19 @@
+// workaround issue between gcc >= 4.7 and cuda 5.5
+#if (defined __GNUC__) && (__GNUC__>4 || __GNUC_MINOR__>=7)
+  #undef _GLIBCXX_ATOMIC_BUILTINS
+  #undef _GLIBCXX_USE_INT128
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <climits>
 #include <map>
 #include <vector>
 #include <iostream>
+
+#include <unistd.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include <Eigen/Dense>
 
@@ -35,7 +45,26 @@ using namespace std;
 
 namespace AprilTags {
 
+  void print_diff(struct timespec start, struct timespec stop, string prefix) {
+		double accum = ( stop.tv_sec - start.tv_sec )
+		      + ( stop.tv_nsec - start.tv_nsec )
+		        / 1000000L;
+		std::cout <<  prefix + " ";
+		printf( "%lf\n", accum );
+	}
+
   std::vector<TagDetection> TagDetector::extractTags(const cv::Mat& image) {
+
+    int example_cuda = Edge::example_cuda_function();
+
+    std::cout << "Welcome to CUDA" << example_cuda << std::endl;
+
+    struct timespec start, stop;
+
+    if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+		  perror( "clock gettime" );
+		  exit( EXIT_FAILURE );
+		}
 
     // convert to internal AprilTags image (todo: slow, change internally to OpenCV)
     int width = image.cols;
@@ -49,6 +78,13 @@ namespace AprilTags {
       }
     }
     std::pair<int,int> opticalCenter(width/2, height/2);
+
+    if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+		  perror( "clock gettime" );
+		  exit( EXIT_FAILURE );
+		}
+
+		print_diff(start, stop, "[CONVERT TO INTERNAL ATAG] ");
 
 #ifdef DEBUG_APRIL
 #if 0
@@ -97,6 +133,12 @@ namespace AprilTags {
   //================================================================
   // Step one: preprocess image (convert to grayscale) and low pass if necessary
 
+
+  if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
   FloatImage fim = fimOrig;
   
   //! Gaussian smoothing kernel applied to image (0 == no filter).
@@ -124,11 +166,23 @@ namespace AprilTags {
     fim.filterFactoredCentered(filt, filt);
   }
 
+  if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
+	print_diff(start, stop, "[STEP 1] ");
+
   //================================================================
   // Step two: Compute the local gradient. We store the direction and magnitude.
   // This step is quite sensitve to noise, since a few bad theta estimates will
   // break up segments, causing us to miss Quads. It is useful to do a Gaussian
   // low pass on this step even if we don't want it for encoding.
+
+  if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
 
   FloatImage fimSeg;
   if (segSigma > 0) {
@@ -188,10 +242,23 @@ namespace AprilTags {
   }
 #endif
 
+  if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
+	print_diff(start, stop, "[STEP 2]");
+
   //================================================================
   // Step three. Extract edges by grouping pixels with similar
   // thetas together. This is a greedy algorithm: we start with
   // the most similar pixels.  We use 4-connectivity.
+
+  if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
   UnionFindSimple uf(fimSeg.getWidth()*fimSeg.getHeight());
   
   vector<Edge> edges(width*height*4);
@@ -235,10 +302,22 @@ namespace AprilTags {
     std::stable_sort(edges.begin(), edges.end());
     Edge::mergeEdges(edges,uf,tmin,tmax,mmin,mmax);
   }
+
+  if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
+	print_diff(start, stop, "[STEP 3]");
           
   //================================================================
   // Step four: Loop over the pixels again, collecting statistics for each cluster.
   // We will soon fit lines (segments) to these points.
+
+  if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+		perror( "clock gettime" );
+		exit( EXIT_FAILURE );
+	}
 
   map<int, vector<XYWeight> > clusters;
   for (int y = 0; y+1 < fimSeg.getHeight(); y++) {
@@ -258,8 +337,21 @@ namespace AprilTags {
     }
   }
 
+  if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
+	print_diff(start, stop, "[STEP 4]");
+
   //================================================================
   // Step five: Loop over the clusters, fitting lines (which we call Segments).
+
+  if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
   std::vector<Segment> segments; //used in Step six
   std::map<int, std::vector<XYWeight> >::const_iterator clustersItr;
   for (clustersItr = clusters.begin(); clustersItr != clusters.end(); clustersItr++) {
@@ -299,9 +391,9 @@ namespace AprilTags {
       float err = MathUtil::mod2pi(theta - seg.getTheta());
 
       if (err < 0)
-	noflip += mag;
+				noflip += mag;
       else
-	flip += mag;
+				flip += mag;
     }
 
     if (flip > noflip) {
@@ -336,9 +428,22 @@ namespace AprilTags {
 #endif
 #endif
 
+  if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
+	print_diff(start, stop, "[STEP 5]");
+
   // Step six: For each segment, find segments that begin where this segment ends.
   // (We will chain segments together next...) The gridder accelerates the search by
   // building (essentially) a 2D hash table.
+
+  if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
   Gridder<Segment> gridder(0,0,width,height,10);
   
   // add every segment to the hash table according to the position of the segment's
@@ -360,7 +465,7 @@ namespace AprilTags {
     while(iter.hasNext()) {
       Segment &child = iter.next();
       if (MathUtil::mod2pi(child.getTheta() - parentseg.getTheta()) > 0) {
-	continue;
+				continue;
       }
 
       // compute intersection of points
@@ -369,7 +474,7 @@ namespace AprilTags {
 
       std::pair<float,float> p = parentLine.intersectionWith(childLine);
       if (p.first == -1) {
-	continue;
+				continue;
       }
 
       float parentDist = MathUtil::distance2D(p, std::pair<float,float>(parentseg.getX1(),parentseg.getY1()));
@@ -385,9 +490,22 @@ namespace AprilTags {
     }
   }
 
+  if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
+	print_diff(start, stop, "[STEP 6]");
+
   //================================================================
   // Step seven: Search all connected segments to see if any form a loop of length 4.
   // Add those to the quads list.
+
+  if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
   vector<Quad> quads;
   
   vector<Segment*> tmp(5);
@@ -422,10 +540,21 @@ namespace AprilTags {
   }
 #endif
 
+  if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
+	print_diff(start, stop, "[STEP 7]");
   //================================================================
   // Step eight. Decode the quads. For each quad, we first estimate a
   // threshold color to decide between 0 and 1. Then, we read off the
   // bits and see if they make sense.
+
+  if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
 
   std::vector<TagDetection> detections;
 
@@ -439,47 +568,47 @@ namespace AprilTags {
     for (int iy = -1; iy <= dd; iy++) {
       float y = (iy + 0.5f) / dd;
       for (int ix = -1; ix <= dd; ix++) {
-	float x = (ix + 0.5f) / dd;
-	std::pair<float,float> pxy = quad.interpolate01(x, y);
-	int irx = (int) (pxy.first + 0.5);
-	int iry = (int) (pxy.second + 0.5);
-	if (irx < 0 || irx >= width || iry < 0 || iry >= height)
-	  continue;
-	float v = fim.get(irx, iry);
-	if (iy == -1 || iy == dd || ix == -1 || ix == dd)
-	  whiteModel.addObservation(x, y, v);
-	else if (iy == 0 || iy == (dd-1) || ix == 0 || ix == (dd-1))
-	  blackModel.addObservation(x, y, v);
-      }
-    }
+				float x = (ix + 0.5f) / dd;
+				std::pair<float,float> pxy = quad.interpolate01(x, y);
+				int irx = (int) (pxy.first + 0.5);
+				int iry = (int) (pxy.second + 0.5);
+				if (irx < 0 || irx >= width || iry < 0 || iry >= height)
+	  			continue;
+				float v = fim.get(irx, iry);
+				if (iy == -1 || iy == dd || ix == -1 || ix == dd)
+	  			whiteModel.addObservation(x, y, v);
+				else if (iy == 0 || iy == (dd-1) || ix == 0 || ix == (dd-1))
+	 				blackModel.addObservation(x, y, v);
+      	}
+    	}
 
-    bool bad = false;
-    unsigned long long tagCode = 0;
-    for ( int iy = thisTagFamily.dimension-1; iy >= 0; iy-- ) {
-      float y = (thisTagFamily.blackBorder + iy + 0.5f) / dd;
-      for (int ix = 0; ix < thisTagFamily.dimension; ix++ ) {
-	float x = (thisTagFamily.blackBorder + ix + 0.5f) / dd;
-	std::pair<float,float> pxy = quad.interpolate01(x, y);
-	int irx = (int) (pxy.first + 0.5);
-	int iry = (int) (pxy.second + 0.5);
-	if (irx < 0 || irx >= width || iry < 0 || iry >= height) {
-	  // cout << "*** bad:  irx=" << irx << "  iry=" << iry << endl;
-	  bad = true;
-	  continue;
-	}
-	float threshold = (blackModel.interpolate(x,y) + whiteModel.interpolate(x,y)) * 0.5f;
-	float v = fim.get(irx, iry);
-	tagCode = tagCode << 1;
-	if ( v > threshold)
-	  tagCode |= 1;
-#ifdef DEBUG_APRIL
+    	bool bad = false;
+    	unsigned long long tagCode = 0;
+    	for ( int iy = thisTagFamily.dimension-1; iy >= 0; iy-- ) {
+		    float y = (thisTagFamily.blackBorder + iy + 0.5f) / dd;
+		    for (int ix = 0; ix < thisTagFamily.dimension; ix++ ) {
+					float x = (thisTagFamily.blackBorder + ix + 0.5f) / dd;
+					std::pair<float,float> pxy = quad.interpolate01(x, y);
+					int irx = (int) (pxy.first + 0.5);
+					int iry = (int) (pxy.second + 0.5);
+					if (irx < 0 || irx >= width || iry < 0 || iry >= height) {
+						// cout << "*** bad:  irx=" << irx << "  iry=" << iry << endl;
+						bad = true;
+						continue;
+					}
+				float threshold = (blackModel.interpolate(x,y) + whiteModel.interpolate(x,y)) * 0.5f;
+				float v = fim.get(irx, iry);
+				tagCode = tagCode << 1;
+				if ( v > threshold)
+	  			tagCode |= 1;
+				#ifdef DEBUG_APRIL
         {
           if (v>threshold)
             cv::circle(image, cv::Point2f(irx, iry), 1, cv::Scalar(0,0,255,0), 2);
           else
             cv::circle(image, cv::Point2f(irx, iry), 1, cv::Scalar(0,255,0,0), 2);
         }
-#endif
+				#endif
       }
     }
 
@@ -511,20 +640,20 @@ namespace AprilTags {
       int bestRot = -1;
       float bestDist = FLT_MAX;
       for ( int i=0; i<4; i++ ) {
-	float const dist = AprilTags::MathUtil::distance2D(bottomLeft, quad.quadPoints[i]);
-	if ( dist < bestDist ) {
-	  bestDist = dist;
-	  bestRot = i;
-	}
+				float const dist = AprilTags::MathUtil::distance2D(bottomLeft, quad.quadPoints[i]);
+				if ( dist < bestDist ) {
+					bestDist = dist;
+					bestRot = i;
+				}
       }
 
       for (int i=0; i< 4; i++)
-	thisTagDetection.p[i] = quad.quadPoints[(i+bestRot) % 4];
+				thisTagDetection.p[i] = quad.quadPoints[(i+bestRot) % 4];
 
       if (thisTagDetection.good) {
-	thisTagDetection.cxy = quad.interpolate01(0.5f, 0.5f);
-	thisTagDetection.observedPerimeter = quad.observedPerimeter;
-	detections.push_back(thisTagDetection);
+				thisTagDetection.cxy = quad.interpolate01(0.5f, 0.5f);
+				thisTagDetection.observedPerimeter = quad.observedPerimeter;
+				detections.push_back(thisTagDetection);
       }
     }
   }
@@ -535,6 +664,12 @@ namespace AprilTags {
   }
 #endif
 
+  if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
+	print_diff(start, stop, "[STEP 8]");
   //================================================================
   //Step nine: Some quads may be detected more than once, due to
   //partial occlusion and our aggressive attempts to recover from
@@ -542,12 +677,17 @@ namespace AprilTags {
   //keep the one with the lowest error, and if the error is the same,
   //the one with the greatest observed perimeter.
 
+  if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
   std::vector<TagDetection> goodDetections;
 
   // NOTE: allow multiple non-overlapping detections of the same target.
 
   for ( vector<TagDetection>::const_iterator it = detections.begin();
-	it != detections.end(); it++ ) {
+  it != detections.end(); it++ ) {
     const TagDetection &thisTagDetection = *it;
 
     bool newFeature = true;
@@ -556,20 +696,20 @@ namespace AprilTags {
       TagDetection &otherTagDetection = goodDetections[odidx];
 
       if ( thisTagDetection.id != otherTagDetection.id ||
-	   ! thisTagDetection.overlapsTooMuch(otherTagDetection) )
-	continue;
+	   	! thisTagDetection.overlapsTooMuch(otherTagDetection) )
+				continue;
 
       // There's a conflict.  We must pick one to keep.
       newFeature = false;
 
       // This detection is worse than the previous one... just don't use it.
       if ( thisTagDetection.hammingDistance > otherTagDetection.hammingDistance )
-	continue;
+				continue;
 
       // Otherwise, keep the new one if it either has strictly *lower* error, or greater perimeter.
       if ( thisTagDetection.hammingDistance < otherTagDetection.hammingDistance ||
-	   thisTagDetection.observedPerimeter > otherTagDetection.observedPerimeter )
-	goodDetections[odidx] = thisTagDetection;
+	   	thisTagDetection.observedPerimeter > otherTagDetection.observedPerimeter )
+				goodDetections[odidx] = thisTagDetection;
     }
 
      if ( newFeature )
@@ -579,6 +719,12 @@ namespace AprilTags {
 
   //cout << "AprilTags: edges=" << nEdges << " clusters=" << clusters.size() << " segments=" << segments.size()
   //     << " quads=" << quads.size() << " detections=" << detections.size() << " unique tags=" << goodDetections.size() << endl;
+  if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+	  perror( "clock gettime" );
+	  exit( EXIT_FAILURE );
+	}
+
+	print_diff(start, stop, "[STEP 9]");
 
   return goodDetections;
 }

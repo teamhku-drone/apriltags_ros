@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(apriltags_ros)
 
+find_package(OpenCV 2.4.7 REQUIRED)
+find_package(CUDA REQUIRED)
+
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
@@ -47,6 +50,7 @@ include_directories(include)
 include_directories(
   ${Eigen_INCLUDE_DIRS}
   ${catkin_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
 )
 
 add_library(apriltag_detector
@@ -54,6 +58,7 @@ add_library(apriltag_detector
 )
 target_link_libraries(apriltag_detector
   ${catkin_LIBRARIES}
+  ${OpenCV_LIBS}
 )
 add_dependencies(apriltag_detector apriltags_ros_generate_messages_cpp)
 
