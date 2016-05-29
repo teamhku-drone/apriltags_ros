@@ -18,6 +18,7 @@ using std::max;
  *  is proportional to the difference in local orientations.
  */
 class Edge {
+
 public:
   static float const minMag;   //!< minimum intensity gradient for an edge to be recognized
   static float const maxEdgeCost;   //!< 30 degrees = maximum acceptable difference in local orientations
@@ -51,6 +52,8 @@ public:
 
   //! Try running 
   static int example_cuda_function();
+
+  static void mergeEdges_cuda(std::vector<Edge> &edges, UnionFindSimple &uf, float tmin[], float tmax[], float mmin[], float mmax[]);
 
   //! Process edges in order of increasing cost, merging clusters if we can do so without exceeding the thetaThresh.
   static void mergeEdges(std::vector<Edge> &edges, UnionFindSimple &uf, float tmin[], float tmax[], float mmin[], float mmax[]);

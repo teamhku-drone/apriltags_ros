@@ -7,15 +7,16 @@ namespace AprilTags {
 
 //! Implementation of disjoint set data structure using the union-find algorithm
 class UnionFindSimple {
-  //! Identifies parent ids and sizes.
-  struct Data {
-    int id;
-    int size;
-  };
 
 public:
   explicit UnionFindSimple(int maxId) : data(maxId) {
     init();
+  };
+
+  //! Identifies parent ids and sizes.
+  struct Data {
+    int id;
+    int size;
   };
   
   int getSetSize(int thisId) { return data[getRepresentative(thisId)].size; }
@@ -27,6 +28,8 @@ public:
    *  @param bId
    */
   int connectNodes(int aId, int bId);
+
+  std::vector<Data> getData() { return data; }
 
   void printDataVector() const;
 
